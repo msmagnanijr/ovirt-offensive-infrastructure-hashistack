@@ -1,0 +1,58 @@
+---
+- name: install tar
+  package:
+    name: tar
+    state: present
+
+- name: download and extract traefik if needed
+  unarchive:
+    src: "https://github.com/traefik/traefik/releases/download/v2.3.6/traefik_v2.3.6_linux_amd64.tar.gz"
+    dest: /usr/bin
+    creates: "traefik_v2.3.6_linux_amd64.tar.gz"
+    remote_src: yes
+
+- name: create traefik user
+  user:
+    name: traefik
+    create_home: no
+    system: yes
+    shell: /usr/bin/false
+    state: present
+
+- name: create config directory
+  file:
+    path: /etc/traefik
+    state: directory
+    mode: 0755
+
+- name: copy config
+  template:
+    src: "{{ item }}.j2"
+    dest: "/etc/traefik/{{ item }}"
+    mode: 0644
+  loop:
+    - dynamic_conf.yaml
+    - traefik.yaml
+
+- name: copy systemd service
+  copy:
+    src: "traefik.service"
+    dest: "/etc/systemd/system/traefik.service"
+    mode: 0644
+
+- name: start traefik service
+  systemd:
+    name: traefik
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: register host on freeipa
+  shell: ipa-client-install --server=ipa.mmagnani.lab --domain=mmagnani.lab --realm=MMAGNANI.LAB --principal=admin  --password=solin302388 --enable-dns-updates --mkhomedir --no-ntp --unattended --force-join
+
+- name: disable firewalld for test
+  systemd:
+    name: firewalld
+    state: stopped
+    daemon_reload: yes
+    enabled: no

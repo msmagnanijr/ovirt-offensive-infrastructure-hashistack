@@ -1,0 +1,30 @@
+# Static configuration
+log:
+  level: ERROR
+
+accessLog: {}
+
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  http:
+    address: ":8080"
+  traefik:
+    address: ":8081"
+
+global:
+  sendAnonymousUsage: false
+
+metrics:
+  prometheus: {}
+
+providers:
+  consulCatalog:
+    constraints: "Tag(`http`)"
+    defaultRule: "Host(`{% raw %}{{ normalize .Name }}{% endraw %}.{{ domain }}`)"
+    endpoint:
+      address: http://consul.mmagnani.lab:8500
+  file:
+    filename: /etc/traefik/dynamic_conf.yaml

@@ -1,0 +1,95 @@
+---
+- name: download and extract
+  unarchive:
+    src: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_amd64.zip"
+    dest: /usr/bin
+    creates: "vault_{{ vault_version }}_linux_amd64.zip"
+    remote_src: yes
+
+- name: create config dir
+  file:
+    path: /etc/vault.d
+    state: directory
+    mode: 0755
+
+- name: create vault user
+  user:
+    name: vault
+    home: /etc/vault.d
+    system: yes
+    shell: /usr/bin/false
+    state: present
+
+- name: create data directory
+  file:
+    path: /opt/vault
+    state: directory
+    owner: vault
+    group: vault
+    mode: 0755
+
+- name: copy config
+  template:
+    src: "vault.hcl.j2"
+    dest: "/etc/vault.d/vault.hcl"
+    mode: 0644
+
+- name: copy systemd service
+  copy:
+    src: "vault.service"
+    dest: "/etc/systemd/system/vault.service"
+    mode: 0644
+
+- name: start vault service
+  systemd:
+    name: vault
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: register host on freeipa
+  shell: ipa-client-install --server=ipa.mmagnani.lab --domain=mmagnani.lab --realm=MMAGNANI.LAB --principal=admin  --password=solin302388 --enable-dns-updates --mkhomedir --no-ntp --unattended --force-join
+
+- name: disable firewalld for test
+  systemd:
+    name: firewalld
+    state: stopped
+    daemon_reload: yes
+    enabled: no
+
+- name: get Vault status
+  command: vault status -format json
+  environment:
+    VAULT_ADDR: "http://10.0.0.184:8200"
+  register: _vault_status_results
+  failed_when: _vault_status_results.rc == 1
+
+- name: parse output of vault status
+  set_fact: _vault_status_parsed="{{ _vault_status_results.stdout | from_json }}"
+
+- name: initialize vault
+  run_once: true
+  include_tasks: init.yml
+  when: not _vault_status_parsed.initialized
+
+- name: unseal Vault
+  include_tasks: unseal.yml
+  when: _vault_status_parsed.sealed
+
+- name: load root token
+  delegate_to: localhost
+  run_once: true
+  become: no
+  no_log: yes
+  set_fact: vault_root_token="{{ lookup('file', vault_token_dir + '/root-token') }}"
+  when: _vault_status_parsed.initialized
+
+- name: enable syslog audit device
+  command: vault audit enable syslog
+  environment:
+    VAULT_ADDR: "http://10.0.0.184:8200"
+    VAULT_TOKEN: "{{ vault_root_token }}"
+  register: _vault_audit_enable_result
+  failed_when:
+    - _vault_audit_enable_result.rc > 0
+    - '"path already in use" not in _vault_audit_enable_result.stderr'

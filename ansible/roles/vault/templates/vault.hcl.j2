@@ -1,0 +1,26 @@
+storage "consul" {
+  address = "consul.mmagnani.lab:8500"
+  path = "vault"
+}
+
+service_registration "consul" {
+  service_tags = "http"
+}
+
+listener "tcp" {
+  address = "10.0.0.184:8200"
+  tls_disable = true
+  telemetry {
+    unauthenticated_metrics_access = true
+  }
+}
+
+telemetry {
+  prometheus_retention_time = "30s"
+  disable_hostname = true
+}
+
+# Advertise the non-loopback interface
+api_addr = "http://10.0.0.184:8200"
+
+ui = true
